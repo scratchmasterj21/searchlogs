@@ -220,32 +220,8 @@ const DeviceManagement: React.FC = () => {
         });
 
     // Format date for display
-    const formatDate = (dateString: string) => {
-        if (!dateString) return 'Unknown';
-        try {
-            return new Date(dateString).toLocaleString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        } catch (error) {
-            return 'Invalid Date';
-        }
-    };
 
     // Get device type from user agent
-    const getDeviceType = (userAgent: string) => {
-        if (!userAgent) return 'Unknown';
-        if (userAgent.includes('iPhone')) return 'iPhone';
-        if (userAgent.includes('iPad')) return 'iPad';
-        if (userAgent.includes('Android')) return 'Android';
-        if (userAgent.includes('Macintosh')) return 'Mac';
-        if (userAgent.includes('Windows')) return 'Windows';
-        if (userAgent.includes('Linux')) return 'Linux';
-        return 'Unknown';
-    };
 
     return (
         <div className="container mx-auto px-6 py-8">
