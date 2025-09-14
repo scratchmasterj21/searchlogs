@@ -2,6 +2,7 @@
 import SearchLogsTable from './SearchLogsTable';
 import ConfigPage from './ConfigPage';
 import AnalyticsDashboard from './AnalyticsDashboard';
+import DeviceManagement from './DeviceManagement';
 
 import LoginPage from "./Login";
 import AuthProvider, { AuthContext } from './AuthProvider'; // Make sure this path is correct
@@ -19,6 +20,7 @@ function App() {
                 <Route path="/" element={<ProtectedRoute><SearchLogsTable /></ProtectedRoute>} />
                 <Route path="/config" element={<ProtectedRoute><ConfigPage /></ProtectedRoute>} />
                 <Route path="/analytics" element={<ProtectedRoute><AnalyticsDashboard /></ProtectedRoute>} />
+                <Route path="/devices" element={<ProtectedRoute><DeviceManagement /></ProtectedRoute>} />
             </Routes>
         </Router>
     </AuthProvider>

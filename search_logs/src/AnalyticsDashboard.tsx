@@ -27,6 +27,9 @@ const AnalyticsDashboard: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [fromDate, setFromDate] = useState(() => formatDateForInput(toJST(new Date())));
     const [toDate, setToDate] = useState(() => formatDateForInput(toJST(new Date())));
+    const [selectedDevice, setSelectedDevice] = useState<string>('');
+    const [showPerDevice, setShowPerDevice] = useState(false);
+    const [showDeviceModal, setShowDeviceModal] = useState(false);
     
     const { user } = useContext(AuthContext);
 
@@ -159,6 +162,57 @@ const AnalyticsDashboard: React.FC = () => {
         // Average results per search
         const avgResults = logs.reduce((sum, log) => sum + (log.results?.length || 0), 0) / logs.length;
 
+        // Per-device analytics
+        const perDeviceAnalytics = Object.keys(deviceCounts).map(deviceName => {
+            const deviceLogs = logs.filter(log => (deviceMappings[log.deviceId] || log.deviceId) === deviceName);
+            
+            // Device-specific metrics
+            const deviceSearchTypes = deviceLogs.reduce((acc, log) => {
+                acc[log.searchType] = (acc[log.searchType] || 0) + 1;
+                return acc;
+            }, {} as Record<string, number>);
+
+            const deviceDailyTrends = deviceLogs.reduce((acc, log) => {
+                const date = new Date(log.date).toISOString().split('T')[0];
+                acc[date] = (acc[date] || 0) + 1;
+                return acc;
+            }, {} as Record<string, number>);
+
+            const deviceHourlyDistribution = deviceLogs.reduce((acc, log) => {
+                const hour = new Date(log.date).getHours();
+                acc[hour] = (acc[hour] || 0) + 1;
+                return acc;
+            }, {} as Record<number, number>);
+
+            const deviceQueries = deviceLogs.reduce((acc, log) => {
+                const query = log.query.toLowerCase().trim();
+                acc[query] = (acc[query] || 0) + 1;
+                return acc;
+            }, {} as Record<string, number>);
+
+            const deviceTopQueries = Object.entries(deviceQueries)
+                .sort(([,a], [,b]) => b - a)
+                .slice(0, 5);
+
+            const deviceAvgResults = deviceLogs.reduce((sum, log) => sum + (log.results?.length || 0), 0) / deviceLogs.length;
+
+            // Find device ID for this device name
+            const deviceId = Object.keys(deviceMappings).find(id => deviceMappings[id] === deviceName) || deviceName;
+
+            return {
+                deviceId,
+                deviceName,
+                totalSearches: deviceLogs.length,
+                searchTypeCounts: deviceSearchTypes,
+                dailyTrends: deviceDailyTrends,
+                hourlyDistribution: deviceHourlyDistribution,
+                topQueries: deviceTopQueries,
+                avgResults: Math.round(deviceAvgResults * 10) / 10,
+                firstSearch: deviceLogs.length > 0 ? Math.min(...deviceLogs.map(log => new Date(log.date).getTime())) : 0,
+                lastSearch: deviceLogs.length > 0 ? Math.max(...deviceLogs.map(log => new Date(log.date).getTime())) : 0
+            };
+        }).sort((a, b) => b.totalSearches - a.totalSearches);
+
         return {
             totalSearches: logs.length,
             searchTypeCounts,
@@ -166,12 +220,23 @@ const AnalyticsDashboard: React.FC = () => {
             dailyTrends,
             hourlyDistribution,
             topQueries,
-            avgResults: Math.round(avgResults * 10) / 10
+            avgResults: Math.round(avgResults * 10) / 10,
+            perDeviceAnalytics
         };
     }, [logs, deviceMappings]);
 
     const handleDateChange = () => {
         fetchLogs(fromDate, toDate);
+    };
+
+    const handleViewDeviceDetails = (deviceId: string) => {
+        setSelectedDevice(deviceId);
+        setShowDeviceModal(true);
+    };
+
+    const handleCloseModal = () => {
+        setShowDeviceModal(false);
+        setSelectedDevice('');
     };
 
     // Simple chart components
@@ -293,6 +358,15 @@ const AnalyticsDashboard: React.FC = () => {
                             >
                                 Search Logs
                             </Link>
+                            <Link 
+                                to="/devices" 
+                                className="px-4 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-colors duration-200 flex items-center space-x-2"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                                <span>Devices</span>
+                            </Link>
                             <LogoutButton />
                         </div>
                     </div>
@@ -326,13 +400,23 @@ const AnalyticsDashboard: React.FC = () => {
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
                         />
                     </div>
-                    <div className="flex items-end">
+                    <div className="flex items-end space-x-4">
                         <button
                             onClick={handleDateChange}
                             disabled={loading}
                             className="px-6 py-3 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-400 disabled:bg-gray-400 transition-colors duration-200"
                         >
                             {loading ? 'Loading...' : 'Update Analytics'}
+                        </button>
+                        <button
+                            onClick={() => setShowPerDevice(!showPerDevice)}
+                            className={`px-6 py-3 rounded-lg shadow-md transition-colors duration-200 ${
+                                showPerDevice 
+                                    ? 'bg-green-600 text-white hover:bg-green-700' 
+                                    : 'bg-gray-600 text-white hover:bg-gray-700'
+                            }`}
+                        >
+                            {showPerDevice ? 'Hide Per-Device' : 'Show Per-Device'}
                         </button>
                     </div>
                 </div>
@@ -445,6 +529,55 @@ const AnalyticsDashboard: React.FC = () => {
                             ))}
                         </div>
                     </div>
+
+                    {/* Per-Device Analytics */}
+                    {showPerDevice && (
+                        <div className="mt-8">
+                            <div className="mb-6">
+                                <h2 className="text-2xl font-bold text-gray-900 mb-2">Per-Device Analytics</h2>
+                                <p className="text-gray-600">Detailed analytics for each individual device</p>
+                            </div>
+
+
+                            {/* Device Overview Cards */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                                {analytics.perDeviceAnalytics.map((device) => (
+                                    <div key={device.deviceId} className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <h3 className="text-lg font-semibold text-gray-900 truncate" title={device.deviceName}>
+                                                {device.deviceName}
+                                            </h3>
+                                            <button
+                                                onClick={() => handleViewDeviceDetails(device.deviceId)}
+                                                className="px-3 py-1 rounded-full text-xs font-medium transition-colors bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                            >
+                                                View Details
+                                            </button>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-gray-600">Total Searches:</span>
+                                                <span className="font-semibold text-gray-900">{device.totalSearches}</span>
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-gray-600">Avg Results:</span>
+                                                <span className="font-semibold text-gray-900">{device.avgResults}</span>
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-gray-600">Search Types:</span>
+                                                <span className="font-semibold text-gray-900">{Object.keys(device.searchTypeCounts).length}</span>
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-gray-600">Unique Queries:</span>
+                                                <span className="font-semibold text-gray-900">{Object.keys(device.topQueries).length}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                        </div>
+                    )}
                 </>
             )}
 
@@ -464,6 +597,134 @@ const AnalyticsDashboard: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {/* Device Details Modal */}
+            {showDeviceModal && selectedDevice && (() => {
+                const device = analytics?.perDeviceAnalytics.find(d => d.deviceId === selectedDevice);
+                if (!device) return null;
+
+                return (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+                            {/* Modal Header */}
+                            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-xl">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h2 className="text-2xl font-bold text-gray-900">{device.deviceName}</h2>
+                                        <p className="text-gray-600">Detailed Device Analytics</p>
+                                    </div>
+                                    <button
+                                        onClick={handleCloseModal}
+                                        className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                                    >
+                                        <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Modal Content */}
+                            <div className="p-6 space-y-8">
+                                {/* Key Metrics */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                    <MetricCard
+                                        title="Total Searches"
+                                        value={device.totalSearches}
+                                        subtitle="in selected period"
+                                        icon={
+                                            <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                            </svg>
+                                        }
+                                    />
+                                    <MetricCard
+                                        title="Avg Results"
+                                        value={device.avgResults}
+                                        subtitle="per search"
+                                        icon={
+                                            <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                            </svg>
+                                        }
+                                    />
+                                    <MetricCard
+                                        title="Search Types"
+                                        value={Object.keys(device.searchTypeCounts).length}
+                                        subtitle="different types"
+                                        icon={
+                                            <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                                            </svg>
+                                        }
+                                    />
+                                    <MetricCard
+                                        title="Unique Queries"
+                                        value={Object.keys(device.topQueries).length}
+                                        subtitle="different queries"
+                                        icon={
+                                            <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                            </svg>
+                                        }
+                                    />
+                                </div>
+
+                                {/* Charts */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                    <BarChart 
+                                        data={device.searchTypeCounts} 
+                                        title={`${device.deviceName} - Search Types`} 
+                                        color="blue"
+                                    />
+                                    <BarChart 
+                                        data={device.hourlyDistribution} 
+                                        title={`${device.deviceName} - Hourly Usage`} 
+                                        color="green"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                    <LineChart 
+                                        data={device.dailyTrends} 
+                                        title={`${device.deviceName} - Daily Trends`}
+                                    />
+                                    <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+                                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Queries</h3>
+                                        <div className="space-y-3">
+                                            {device.topQueries.map(([query, count], index) => (
+                                                <div key={query} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                    <div className="flex items-center">
+                                                        <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                                                            <span className="text-blue-600 font-semibold text-xs">{index + 1}</span>
+                                                        </div>
+                                                        <span className="font-medium text-gray-900 text-sm">{query}</span>
+                                                    </div>
+                                                    <span className="text-xs text-gray-600 bg-white px-2 py-1 rounded-full">
+                                                        {count}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 rounded-b-xl">
+                                <div className="flex justify-end">
+                                    <button
+                                        onClick={handleCloseModal}
+                                        className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 };
