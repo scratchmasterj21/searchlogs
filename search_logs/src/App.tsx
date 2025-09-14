@@ -1,6 +1,7 @@
 // App.js
 import SearchLogsTable from './SearchLogsTable';
 import ConfigPage from './ConfigPage';
+import AnalyticsDashboard from './AnalyticsDashboard';
 
 import LoginPage from "./Login";
 import AuthProvider, { AuthContext } from './AuthProvider'; // Make sure this path is correct
@@ -17,7 +18,7 @@ function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/" element={<ProtectedRoute><SearchLogsTable /></ProtectedRoute>} />
                 <Route path="/config" element={<ProtectedRoute><ConfigPage /></ProtectedRoute>} />
-
+                <Route path="/analytics" element={<ProtectedRoute><AnalyticsDashboard /></ProtectedRoute>} />
             </Routes>
         </Router>
     </AuthProvider>
