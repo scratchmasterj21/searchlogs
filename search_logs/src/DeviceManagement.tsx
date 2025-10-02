@@ -14,6 +14,7 @@ interface DeviceInfo {
     lastSeen: string;
     screenResolution: string;
     userAgent: string;
+    searchBlocked: boolean;
 }
 
 const DeviceManagement: React.FC = () => {
@@ -21,12 +22,12 @@ const DeviceManagement: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [editingDevice, setEditingDevice] = useState<string | null>(null);
-    const [editForm, setEditForm] = useState({ deviceName: '', isNamed: false });
+    const [editForm, setEditForm] = useState({ deviceName: '', isNamed: false, searchBlocked: false });
     const [searchTerm, setSearchTerm] = useState('');
     const [sortBy, setSortBy] = useState<'deviceName' | 'lastSeen' | 'firstVisit'>('lastSeen');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
     const [bulkEditMode, setBulkEditMode] = useState(false);
-    const [bulkEditForm, setBulkEditForm] = useState({ deviceName: '', isNamed: false });
+    const [bulkEditForm, setBulkEditForm] = useState({ deviceName: '', isNamed: false, searchBlocked: false });
     
     const { user } = useContext(AuthContext);
 
@@ -67,7 +68,8 @@ const DeviceManagement: React.FC = () => {
         setEditingDevice(device.deviceId);
         setEditForm({
             deviceName: device.deviceName,
-            isNamed: device.isNamed
+            isNamed: device.isNamed,
+            searchBlocked: device.searchBlocked || false
         });
     };
 
@@ -87,18 +89,19 @@ const DeviceManagement: React.FC = () => {
                 await set(deviceRef, {
                     ...currentData,
                     deviceName: editForm.deviceName.trim(),
-                    isNamed: editForm.isNamed
+                    isNamed: editForm.isNamed,
+                    searchBlocked: editForm.searchBlocked
                 });
                 
                 // Update local state
                 setDevices(prev => prev.map(device => 
                     device.deviceId === deviceId 
-                        ? { ...device, deviceName: editForm.deviceName.trim(), isNamed: editForm.isNamed }
+                        ? { ...device, deviceName: editForm.deviceName.trim(), isNamed: editForm.isNamed, searchBlocked: editForm.searchBlocked }
                         : device
                 ));
                 
                 setEditingDevice(null);
-                setEditForm({ deviceName: '', isNamed: false });
+                setEditForm({ deviceName: '', isNamed: false, searchBlocked: false });
             }
         } catch (err) {
             setError('Failed to update device. Please try again.');
@@ -109,13 +112,13 @@ const DeviceManagement: React.FC = () => {
     // Cancel edit
     const handleCancelEdit = () => {
         setEditingDevice(null);
-        setEditForm({ deviceName: '', isNamed: false });
+        setEditForm({ deviceName: '', isNamed: false, searchBlocked: false });
     };
 
     // Bulk edit functions
     const handleBulkEdit = () => {
         setBulkEditMode(true);
-        setBulkEditForm({ deviceName: '', isNamed: false });
+        setBulkEditForm({ deviceName: '', isNamed: false, searchBlocked: false });
     };
 
     const handleBulkSave = async () => {
@@ -146,7 +149,8 @@ const DeviceManagement: React.FC = () => {
                         await set(deviceRef, {
                             ...currentData,
                             deviceName: bulkEditForm.deviceName.trim(),
-                            isNamed: bulkEditForm.isNamed
+                            isNamed: bulkEditForm.isNamed,
+                            searchBlocked: bulkEditForm.searchBlocked
                         });
                     }
                 });
@@ -156,12 +160,12 @@ const DeviceManagement: React.FC = () => {
                 // Update local state
                 setDevices(prev => prev.map(device => 
                     !device.isNamed 
-                        ? { ...device, deviceName: bulkEditForm.deviceName.trim(), isNamed: bulkEditForm.isNamed }
+                        ? { ...device, deviceName: bulkEditForm.deviceName.trim(), isNamed: bulkEditForm.isNamed, searchBlocked: bulkEditForm.searchBlocked }
                         : device
                 ));
                 
                 setBulkEditMode(false);
-                setBulkEditForm({ deviceName: '', isNamed: false });
+                setBulkEditForm({ deviceName: '', isNamed: false, searchBlocked: false });
             } catch (err) {
                 setError('Failed to update devices. Please try again.');
                 console.error('Error updating devices:', err);
@@ -171,7 +175,33 @@ const DeviceManagement: React.FC = () => {
 
     const handleBulkCancel = () => {
         setBulkEditMode(false);
-        setBulkEditForm({ deviceName: '', isNamed: false });
+        setBulkEditForm({ deviceName: '', isNamed: false, searchBlocked: false });
+    };
+
+    // Toggle search blocking directly
+    const handleToggleSearchBlocking = async (deviceId: string, currentStatus: boolean) => {
+        try {
+            const deviceRef = ref(databaseLog, `deviceRegistry/${deviceId}`);
+            const snapshot = await get(deviceRef);
+            
+            if (snapshot.exists()) {
+                const currentData = snapshot.val();
+                await set(deviceRef, {
+                    ...currentData,
+                    searchBlocked: !currentStatus
+                });
+                
+                // Update local state
+                setDevices(prev => prev.map(device => 
+                    device.deviceId === deviceId 
+                        ? { ...device, searchBlocked: !currentStatus }
+                        : device
+                ));
+            }
+        } catch (err) {
+            setError('Failed to update search blocking. Please try again.');
+            console.error('Error updating search blocking:', err);
+        }
     };
 
     // Delete device
@@ -399,6 +429,18 @@ const DeviceManagement: React.FC = () => {
                                         Mark as named
                                     </label>
                                 </div>
+                                <div className="flex items-center space-x-2">
+                                    <input
+                                        type="checkbox"
+                                        id="bulkSearchBlocked"
+                                        checked={bulkEditForm.searchBlocked}
+                                        onChange={(e) => setBulkEditForm(prev => ({ ...prev, searchBlocked: e.target.checked }))}
+                                        className="w-4 h-4 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500"
+                                    />
+                                    <label htmlFor="bulkSearchBlocked" className="text-sm text-gray-700">
+                                        Block search access
+                                    </label>
+                                </div>
                                 <div className="flex space-x-2">
                                     <button
                                         onClick={handleBulkSave}
@@ -431,6 +473,9 @@ const DeviceManagement: React.FC = () => {
                                         </th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Status
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Search Access
                                         </th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Actions
@@ -468,6 +513,18 @@ const DeviceManagement: React.FC = () => {
                                                                 Named
                                                             </label>
                                                         </div>
+                                                        <div className="flex items-center space-x-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                id={`searchBlocked-${device.deviceId}`}
+                                                                checked={editForm.searchBlocked}
+                                                                onChange={(e) => setEditForm(prev => ({ ...prev, searchBlocked: e.target.checked }))}
+                                                                className="w-4 h-4 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500"
+                                                            />
+                                                            <label htmlFor={`searchBlocked-${device.deviceId}`} className="text-xs text-gray-700">
+                                                                Block Search
+                                                            </label>
+                                                        </div>
                                                     </div>
                                                 ) : (
                                                     <div className="text-sm text-gray-900">
@@ -483,6 +540,27 @@ const DeviceManagement: React.FC = () => {
                                                 }`}>
                                                     {device.isNamed ? 'Named' : 'Unnamed'}
                                                 </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="flex items-center space-x-3">
+                                                    <button
+                                                        onClick={() => handleToggleSearchBlocking(device.deviceId, device.searchBlocked || false)}
+                                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                                                            device.searchBlocked ? 'bg-red-600' : 'bg-green-600'
+                                                        }`}
+                                                    >
+                                                        <span
+                                                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                                                device.searchBlocked ? 'translate-x-6' : 'translate-x-1'
+                                                            }`}
+                                                        />
+                                                    </button>
+                                                    <span className={`text-xs font-medium ${
+                                                        device.searchBlocked ? 'text-red-600' : 'text-green-600'
+                                                    }`}>
+                                                        {device.searchBlocked ? 'Blocked' : 'Allowed'}
+                                                    </span>
+                                                </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                                 {editingDevice === device.deviceId ? (
