@@ -19,3 +19,34 @@ export interface SearchLog {
     userAgent: string;
     searchType: string;
 }
+
+// AI Chat Log types
+export interface AIChatSource {
+    citationNumber: number;
+    domain: string;
+    snippet: string;
+    title: string;
+    url: string;
+}
+
+export interface AIChatLog {
+    id: string;
+    date: string;
+    deviceId: string;
+    userMessage: string;
+    aiResponse: string;
+    aiModel: string;
+    confidence: number;
+    processingTime: number;
+    tokensUsed: number;
+    timestamp: number;
+    userAgent: string;
+    sources?: AIChatSource[];
+    sourcesCount?: number;
+    relatedQuestions?: string[];
+    conversationId?: string;
+    conversationLength?: number;
+    messageNumber?: number;
+    hasConversationHistory?: boolean;
+    wasRegenerated?: boolean;
+}

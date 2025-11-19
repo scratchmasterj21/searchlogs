@@ -3,6 +3,8 @@ import SearchLogsTable from './SearchLogsTable';
 import ConfigPage from './ConfigPage';
 import AnalyticsDashboard from './AnalyticsDashboard';
 import DeviceManagement from './DeviceManagement';
+import AIChatLogsTable from './AIChatLogsTable';
+import AIChatAnalyticsDashboard from './AIChatAnalyticsDashboard';
 
 import LoginPage from "./Login";
 import AuthProvider, { AuthContext } from './AuthProvider'; // Make sure this path is correct
@@ -21,6 +23,8 @@ function App() {
                 <Route path="/config" element={<ProtectedRoute><ConfigPage /></ProtectedRoute>} />
                 <Route path="/analytics" element={<ProtectedRoute><AnalyticsDashboard /></ProtectedRoute>} />
                 <Route path="/devices" element={<ProtectedRoute><DeviceManagement /></ProtectedRoute>} />
+                <Route path="/ai-chats" element={<ProtectedRoute><AIChatLogsTable /></ProtectedRoute>} />
+                <Route path="/ai-analytics" element={<ProtectedRoute><AIChatAnalyticsDashboard /></ProtectedRoute>} />
             </Routes>
         </Router>
     </AuthProvider>
