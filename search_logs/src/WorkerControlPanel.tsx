@@ -37,7 +37,7 @@ const WorkerControlPanel: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [confirmDialog, setConfirmDialog] = useState<{
     show: boolean;
-    action: 'worker_enable' | 'worker_disable' | 'ai_enable' | 'ai_disable' | 'bulk_enable' | 'bulk_disable' | null;
+    action: 'worker_enabled' | 'worker_disabled' | 'ai_enabled' | 'ai_disabled' | 'bulk_enable' | 'bulk_disable' | null;
     message: string;
   }>({ show: false, action: null, message: '' });
 
@@ -90,7 +90,7 @@ const WorkerControlPanel: React.FC = () => {
 
     setConfirmDialog({
       show: true,
-      action: newStatus === 'on' ? 'worker_enable' : 'worker_disable',
+      action: newStatus === 'on' ? 'worker_enabled' : 'worker_disabled',
       message: `Are you sure you want to ${newStatus === 'on' ? 'ENABLE' : 'DISABLE'} the Worker Service?\n\nThis will ${newStatus === 'on' ? 'activate' : 'deactivate'} the entire search engine backend.`
     });
   };
@@ -103,7 +103,7 @@ const WorkerControlPanel: React.FC = () => {
 
     setConfirmDialog({
       show: true,
-      action: newStatus === 'on' ? 'ai_enable' : 'ai_disable',
+      action: newStatus === 'on' ? 'ai_enabled' : 'ai_disabled',
       message: `Are you sure you want to ${newStatus === 'on' ? 'ENABLE' : 'DISABLE'} AI Chat Service?\n\nThis will ${newStatus === 'on' ? 'activate' : 'deactivate'} the AI-powered chat and related questions features.`
     });
   };
@@ -148,41 +148,38 @@ const WorkerControlPanel: React.FC = () => {
       // Determine which status to update
       let updates: { worker_status?: 'on' | 'off'; ai_status?: 'on' | 'off' } = {};
       let updateWorker = false;
-      let updateAI = false;
 
       switch (action) {
-        case 'worker_enable':
+        case 'worker_enabled':
           updates.worker_status = 'on';
           updateWorker = true;
           setUpdating(prev => ({ ...prev, worker: true }));
           break;
-        case 'worker_disable':
+        case 'worker_disabled':
           updates.worker_status = 'off';
           updateWorker = true;
           setUpdating(prev => ({ ...prev, worker: true }));
           break;
-        case 'ai_enable':
+        case 'ai_enabled':
           updates.ai_status = 'on';
-          updateAI = true;
+          updateWorker = false;
           setUpdating(prev => ({ ...prev, ai: true }));
           break;
-        case 'ai_disable':
+        case 'ai_disabled':
           updates.ai_status = 'off';
-          updateAI = true;
+          updateWorker = false;
           setUpdating(prev => ({ ...prev, ai: true }));
           break;
         case 'bulk_enable':
           updates.worker_status = 'on';
           updates.ai_status = 'on';
           updateWorker = true;
-          updateAI = true;
           setUpdating({ worker: true, ai: true });
           break;
         case 'bulk_disable':
           updates.worker_status = 'off';
           updates.ai_status = 'off';
           updateWorker = true;
-          updateAI = true;
           setUpdating({ worker: true, ai: true });
           break;
       }
