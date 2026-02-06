@@ -42,7 +42,7 @@ const WorkerControlPanel: React.FC = () => {
   }>({ show: false, action: null, message: '' });
 
   // Auto-refresh state
-  const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   /**
