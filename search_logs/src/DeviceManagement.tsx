@@ -29,6 +29,12 @@ const DeviceManagement: React.FC = () => {
     const [bulkEditMode, setBulkEditMode] = useState(false);
     const [bulkEditForm, setBulkEditForm] = useState({ deviceName: '', isNamed: false, searchBlocked: false });
     
+    // Selection and bulk access states
+    const [selectedDevices, setSelectedDevices] = useState<Set<string>>(new Set());
+    const [selectAllChecked, setSelectAllChecked] = useState(false);
+    const [showBulkAccessPanel, setShowBulkAccessPanel] = useState(false);
+    const [bulkActionLoading, setBulkActionLoading] = useState(false);
+    
     const { user } = useContext(AuthContext);
 
     // Load devices from database
@@ -217,6 +223,12 @@ const DeviceManagement: React.FC = () => {
                 
                 // Update local state
                 setDevices(prev => prev.filter(device => device.deviceId !== deviceId));
+                // Remove from selection if selected
+                setSelectedDevices(prev => {
+                    const newSet = new Set(prev);
+                    newSet.delete(deviceId);
+                    return newSet;
+                });
             } catch (err) {
                 setError('Failed to delete device. Please try again.');
                 console.error('Error deleting device:', err);
@@ -224,7 +236,7 @@ const DeviceManagement: React.FC = () => {
         }
     };
 
-    // Filter and sort devices
+    // Filter and sort devices (moved here before selection handlers that use it)
     const filteredAndSortedDevices = devices
         .filter(device => 
             (device.deviceName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -248,6 +260,181 @@ const DeviceManagement: React.FC = () => {
             
             return sortOrder === 'asc' ? comparison : -comparison;
         });
+
+    // Keep selection in sync with filtered results (must be after filteredAndSortedDevices definition)
+    useEffect(() => {
+        // Remove selections that are not in current filtered results
+        const validSelected = new Set(
+            Array.from(selectedDevices).filter(id =>
+                filteredAndSortedDevices.some(d => d.deviceId === id)
+            )
+        );
+        
+        if (validSelected.size !== selectedDevices.size) {
+            setSelectedDevices(validSelected);
+        }
+
+        // Update selectAllChecked state
+        if (filteredAndSortedDevices.length > 0) {
+            const allSelected = filteredAndSortedDevices.every(d => selectedDevices.has(d.deviceId));
+            setSelectAllChecked(allSelected);
+        } else {
+            setSelectAllChecked(false);
+        }
+    }, [filteredAndSortedDevices, selectedDevices]);
+
+    // Selection Management Functions
+    const handleToggleDeviceSelection = useCallback((deviceId: string) => {
+        setSelectedDevices(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(deviceId)) {
+                newSet.delete(deviceId);
+            } else {
+                newSet.add(deviceId);
+            }
+            return newSet;
+        });
+    }, []);
+
+    const handleSelectAll = useCallback(() => {
+        if (selectAllChecked) {
+            setSelectedDevices(new Set());
+            setSelectAllChecked(false);
+        } else {
+            const allIds = new Set(filteredAndSortedDevices.map(d => d.deviceId));
+            setSelectedDevices(allIds);
+            setSelectAllChecked(true);
+        }
+    }, [selectAllChecked, filteredAndSortedDevices]);
+
+    const handleClearSelection = useCallback(() => {
+        setSelectedDevices(new Set());
+        setSelectAllChecked(false);
+        setShowBulkAccessPanel(false);
+    }, []);
+
+    // Calculate selection statistics
+    const getSelectionStats = useCallback(() => {
+        const selectedInResults = filteredAndSortedDevices.filter(d => 
+            selectedDevices.has(d.deviceId)
+        );
+        
+        return {
+            totalSelected: selectedInResults.length,
+            selectedBlocked: selectedInResults.filter(d => d.searchBlocked).length,
+            selectedAllowed: selectedInResults.filter(d => !d.searchBlocked).length,
+            selectedDevices: selectedInResults
+        };
+    }, [filteredAndSortedDevices, selectedDevices]);
+
+    // Bulk Search Access Functions
+    const handleBulkEnableSearchAccess = async () => {
+        const stats = getSelectionStats();
+        const devicesToEnable = stats.selectedDevices.filter(d => d.searchBlocked);
+        
+        if (stats.totalSelected === 0) {
+            alert('No devices selected. Please select devices first.');
+            return;
+        }
+        
+        if (devicesToEnable.length === 0) {
+            alert('All selected devices already have search access enabled.');
+            return;
+        }
+        
+        const confirmed = window.confirm(
+            `Enable search access for ${devicesToEnable.length} selected device(s)?`
+        );
+        
+        if (confirmed) {
+            setBulkActionLoading(true);
+            try {
+                const promises = devicesToEnable.map(async (device) => {
+                    const deviceRef = ref(databaseLog, `deviceRegistry/${device.deviceId}`);
+                    const snapshot = await get(deviceRef);
+                    
+                    if (snapshot.exists()) {
+                        const currentData = snapshot.val();
+                        await set(deviceRef, {
+                            ...currentData,
+                            searchBlocked: false
+                        });
+                    }
+                });
+
+                await Promise.all(promises);
+                
+                // Update local state
+                setDevices(prev => prev.map(device => 
+                    devicesToEnable.some(d => d.deviceId === device.deviceId)
+                        ? { ...device, searchBlocked: false }
+                        : device
+                ));
+                
+                alert(`Successfully enabled search access for ${devicesToEnable.length} device(s).`);
+                handleClearSelection();
+            } catch (err) {
+                setError('Failed to update devices. Please try again.');
+                console.error('Error updating devices:', err);
+            } finally {
+                setBulkActionLoading(false);
+            }
+        }
+    };
+
+    const handleBulkDisableSearchAccess = async () => {
+        const stats = getSelectionStats();
+        const devicesToDisable = stats.selectedDevices.filter(d => !d.searchBlocked);
+        
+        if (stats.totalSelected === 0) {
+            alert('No devices selected. Please select devices first.');
+            return;
+        }
+        
+        if (devicesToDisable.length === 0) {
+            alert('All selected devices already have search access blocked.');
+            return;
+        }
+        
+        const confirmed = window.confirm(
+            `Block search access for ${devicesToDisable.length} selected device(s)?`
+        );
+        
+        if (confirmed) {
+            setBulkActionLoading(true);
+            try {
+                const promises = devicesToDisable.map(async (device) => {
+                    const deviceRef = ref(databaseLog, `deviceRegistry/${device.deviceId}`);
+                    const snapshot = await get(deviceRef);
+                    
+                    if (snapshot.exists()) {
+                        const currentData = snapshot.val();
+                        await set(deviceRef, {
+                            ...currentData,
+                            searchBlocked: true
+                        });
+                    }
+                });
+
+                await Promise.all(promises);
+                
+                // Update local state
+                setDevices(prev => prev.map(device => 
+                    devicesToDisable.some(d => d.deviceId === device.deviceId)
+                        ? { ...device, searchBlocked: true }
+                        : device
+                ));
+                
+                alert(`Successfully blocked search access for ${devicesToDisable.length} device(s).`);
+                handleClearSelection();
+            } catch (err) {
+                setError('Failed to update devices. Please try again.');
+                console.error('Error updating devices:', err);
+            } finally {
+                setBulkActionLoading(false);
+            }
+        }
+    };
 
     // Format date for display
 
@@ -315,6 +502,16 @@ const DeviceManagement: React.FC = () => {
                                 </svg>
                                 <span>AI Chats</span>
                             </Link>
+                            <Link 
+                                to="/worker-control" 
+                                className="px-4 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-colors duration-200 flex items-center space-x-2"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                <span>Worker Control</span>
+                            </Link>
                             <LogoutButton />
                         </div>
                     </div>
@@ -372,6 +569,130 @@ const DeviceManagement: React.FC = () => {
                 <div className="text-center py-12">
                     <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600"></div>
                     <p className="mt-4 text-gray-600 text-lg">Loading devices...</p>
+                </div>
+            )}
+
+            {/* Selection Summary Bar */}
+            {!loading && selectedDevices.size > 0 && (
+                <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <div className="flex items-center space-x-4">
+                            <div className="flex items-center space-x-2">
+                                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span className="text-blue-900 font-semibold">
+                                    {getSelectionStats().totalSelected} device(s) selected
+                                </span>
+                            </div>
+                            <div className="flex items-center space-x-3 text-sm">
+                                <span className="flex items-center">
+                                    <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
+                                    <span className="text-gray-700">{getSelectionStats().selectedAllowed} allowed</span>
+                                </span>
+                                <span className="flex items-center">
+                                    <span className="w-2 h-2 bg-red-500 rounded-full mr-1"></span>
+                                    <span className="text-gray-700">{getSelectionStats().selectedBlocked} blocked</span>
+                                </span>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                onClick={handleClearSelection}
+                                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 flex items-center space-x-2 text-sm"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                <span>Clear Selection</span>
+                            </button>
+                            <button
+                                onClick={() => setShowBulkAccessPanel(!showBulkAccessPanel)}
+                                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors duration-200 flex items-center space-x-2 text-sm font-medium"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
+                                <span>Bulk Search Access ({getSelectionStats().totalSelected})</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Bulk Access Control Panel */}
+            {!loading && showBulkAccessPanel && selectedDevices.size > 0 && (
+                <div className="mb-6 bg-orange-50 border border-orange-200 rounded-lg p-6">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-orange-900 flex items-center">
+                            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            Bulk Search Access Control
+                        </h3>
+                        <button
+                            onClick={() => setShowBulkAccessPanel(false)}
+                            className="text-gray-500 hover:text-gray-700 transition-colors"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    <div className="mb-4 p-4 bg-white rounded-lg border border-orange-200">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                            <div>
+                                <span className="text-gray-600">Selected:</span>
+                                <span className="ml-2 font-semibold text-gray-900">{getSelectionStats().totalSelected} devices</span>
+                            </div>
+                            <div>
+                                <span className="text-gray-600">Currently Allowed:</span>
+                                <span className="ml-2 font-semibold text-green-700">{getSelectionStats().selectedAllowed} (can be blocked)</span>
+                            </div>
+                            <div>
+                                <span className="text-gray-600">Currently Blocked:</span>
+                                <span className="ml-2 font-semibold text-red-700">{getSelectionStats().selectedBlocked} (can be allowed)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="space-y-3">
+                        <p className="text-sm text-gray-700 mb-4">Choose an action to apply to selected devices:</p>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                            <button
+                                onClick={handleBulkEnableSearchAccess}
+                                disabled={bulkActionLoading || getSelectionStats().selectedBlocked === 0}
+                                className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors duration-200 flex items-center justify-center space-x-2 font-medium"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                                </svg>
+                                <span>
+                                    {bulkActionLoading ? 'Processing...' : `Allow Search Access (${getSelectionStats().selectedBlocked})`}
+                                </span>
+                            </button>
+                            <button
+                                onClick={handleBulkDisableSearchAccess}
+                                disabled={bulkActionLoading || getSelectionStats().selectedAllowed === 0}
+                                className="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors duration-200 flex items-center justify-center space-x-2 font-medium"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
+                                <span>
+                                    {bulkActionLoading ? 'Processing...' : `Block Search Access (${getSelectionStats().selectedAllowed})`}
+                                </span>
+                            </button>
+                        </div>
+                        <button
+                            onClick={() => setShowBulkAccessPanel(false)}
+                            disabled={bulkActionLoading}
+                            className="w-full px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors duration-200"
+                        >
+                            Cancel
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -474,6 +795,15 @@ const DeviceManagement: React.FC = () => {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
+                                        <th className="px-6 py-3 text-left">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectAllChecked}
+                                                onChange={handleSelectAll}
+                                                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer"
+                                                title="Select all devices in current search results"
+                                            />
+                                        </th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Device ID
                                         </th>
@@ -493,7 +823,18 @@ const DeviceManagement: React.FC = () => {
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {filteredAndSortedDevices.map((device) => (
-                                        <tr key={device.deviceId} className="hover:bg-gray-50">
+                                        <tr 
+                                            key={device.deviceId} 
+                                            className={`hover:bg-gray-50 transition-colors ${selectedDevices.has(device.deviceId) ? 'bg-blue-50' : ''}`}
+                                        >
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedDevices.has(device.deviceId)}
+                                                    onChange={() => handleToggleDeviceSelection(device.deviceId)}
+                                                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer"
+                                                />
+                                            </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="text-sm font-mono text-gray-900 max-w-xs truncate" title={device.deviceId || 'Unknown'}>
                                                     {device.deviceId || 'Unknown'}

@@ -5,6 +5,7 @@ import AnalyticsDashboard from './AnalyticsDashboard';
 import DeviceManagement from './DeviceManagement';
 import AIChatLogsTable from './AIChatLogsTable';
 import AIChatAnalyticsDashboard from './AIChatAnalyticsDashboard';
+import WorkerControlPanel from './WorkerControlPanel';
 
 import LoginPage from "./Login";
 import AuthProvider, { AuthContext } from './AuthProvider'; // Make sure this path is correct
@@ -25,6 +26,7 @@ function App() {
                 <Route path="/devices" element={<ProtectedRoute><DeviceManagement /></ProtectedRoute>} />
                 <Route path="/ai-chats" element={<ProtectedRoute><AIChatLogsTable /></ProtectedRoute>} />
                 <Route path="/ai-analytics" element={<ProtectedRoute><AIChatAnalyticsDashboard /></ProtectedRoute>} />
+                <Route path="/worker-control" element={<ProtectedRoute><WorkerControlPanel /></ProtectedRoute>} />
             </Routes>
         </Router>
     </AuthProvider>
