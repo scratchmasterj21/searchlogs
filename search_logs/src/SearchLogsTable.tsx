@@ -78,9 +78,18 @@ const formatDateTime = (dateTimeString: string) => {
     return new Intl.DateTimeFormat('en-US', options).format(new Date(dateTimeString)).replace(',', '');
 };
 
+interface DeviceData {
+    deviceName: string;
+    googleUser?: {
+        name: string | null;
+        email: string | null;
+    };
+}
+
 const SearchLogsTable: React.FC = () => {
     const [logs, setLogs] = useState<SearchLog[]>([]);
     const [deviceMappings, setDeviceMappings] = useState<{ [key: string]: string }>({});
+    const [deviceData, setDeviceData] = useState<{ [key: string]: DeviceData }>({});
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     
@@ -123,12 +132,24 @@ const SearchLogsTable: React.FC = () => {
                 if (snapshot.exists()) {
                     const deviceRegistry = snapshot.val();
                     // Convert deviceRegistry to deviceMappings format
+                    // Priority: Google user name > Device name > Device ID
                     const mappings: { [key: string]: string } = {};
+                    const deviceInfo: { [key: string]: DeviceData } = {};
+                    
                     Object.keys(deviceRegistry).forEach(deviceId => {
                         const device = deviceRegistry[deviceId];
-                        mappings[deviceId] = device.deviceName || deviceId;
+                        mappings[deviceId] = device.googleUser?.name || device.deviceName || deviceId;
+                        deviceInfo[deviceId] = {
+                            deviceName: device.deviceName || deviceId,
+                            googleUser: device.googleUser ? {
+                                name: device.googleUser.name || null,
+                                email: device.googleUser.email || null
+                            } : undefined
+                        };
                     });
+                    
                     setDeviceMappings(mappings);
+                    setDeviceData(deviceInfo);
                 }
             } catch (err) {
                 console.error('Error loading device mappings:', err);
@@ -202,10 +223,18 @@ const SearchLogsTable: React.FC = () => {
         let filtered = logs;
 
         if (debouncedDeviceId) {
-            const deviceIdLower = debouncedDeviceId.toLowerCase();
-            filtered = filtered.filter(log => 
-                (deviceMappings[log.deviceId] || log.deviceId).toLowerCase().includes(deviceIdLower)
-            );
+            const searchTerm = debouncedDeviceId.toLowerCase();
+            filtered = filtered.filter(log => {
+                const device = deviceData[log.deviceId];
+                
+                // Search across: Device ID, Device Name, Google User Name, Google User Email
+                const matchesDeviceId = log.deviceId.toLowerCase().includes(searchTerm);
+                const matchesDeviceName = device?.deviceName.toLowerCase().includes(searchTerm);
+                const matchesGoogleName = device?.googleUser?.name?.toLowerCase().includes(searchTerm);
+                const matchesGoogleEmail = device?.googleUser?.email?.toLowerCase().includes(searchTerm);
+                
+                return matchesDeviceId || matchesDeviceName || matchesGoogleName || matchesGoogleEmail;
+            });
         }
 
         if (debouncedQuery) {
@@ -544,14 +573,19 @@ const SearchLogsTable: React.FC = () => {
                         />
                     </div>
                     <div className="space-y-1">
-                        <label className="block text-sm font-medium text-gray-700">Device ID</label>
+                        <label className="block text-sm font-medium text-gray-700 flex items-center">
+                            Device / User
+                            <svg className="w-4 h-4 ml-1 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/>
+                            </svg>
+                        </label>
                         <input
                             type="text"
                             value={deviceId}
                             onChange={(e) => setDeviceId(e.target.value)}
                             onKeyPress={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
-                            placeholder="Search device..."
+                            placeholder="Search device, name, or Google user..."
                         />
                     </div>
                     <div className="space-y-1">

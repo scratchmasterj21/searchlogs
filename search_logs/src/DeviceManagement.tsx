@@ -15,6 +15,13 @@ interface DeviceInfo {
     screenResolution: string;
     userAgent: string;
     searchBlocked: boolean;
+    googleUser?: {
+        googleId: string;
+        email: string | null;
+        name: string | null;
+        picture: string | null;
+        signedInAt: string;
+    };
 }
 
 const DeviceManagement: React.FC = () => {
@@ -28,6 +35,7 @@ const DeviceManagement: React.FC = () => {
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
     const [bulkEditMode, setBulkEditMode] = useState(false);
     const [bulkEditForm, setBulkEditForm] = useState({ deviceName: '', isNamed: false, searchBlocked: false });
+    const [googleUserFilter, setGoogleUserFilter] = useState('');
     
     // Selection and bulk access states
     const [selectedDevices, setSelectedDevices] = useState<Set<string>>(new Set());
@@ -238,11 +246,22 @@ const DeviceManagement: React.FC = () => {
 
     // Filter and sort devices (moved here before selection handlers that use it)
     const filteredAndSortedDevices = devices
-        .filter(device => 
-            (device.deviceName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (device.deviceId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (device.userAgent || '').toLowerCase().includes(searchTerm.toLowerCase())
-        )
+        .filter(device => {
+            // Search term filter
+            const matchesSearch = 
+                (device.deviceName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (device.deviceId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (device.userAgent || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (device.googleUser?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (device.googleUser?.email || '').toLowerCase().includes(searchTerm.toLowerCase());
+            
+            // Google user filter
+            const matchesGoogleFilter = !googleUserFilter || 
+                (device.googleUser?.name || '').toLowerCase().includes(googleUserFilter.toLowerCase()) ||
+                (device.googleUser?.email || '').toLowerCase().includes(googleUserFilter.toLowerCase());
+            
+            return matchesSearch && matchesGoogleFilter;
+        })
         .sort((a, b) => {
             let comparison = 0;
             
@@ -520,40 +539,72 @@ const DeviceManagement: React.FC = () => {
 
             {/* Search and Filter Controls */}
             <div className="mb-6 bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-                <div className="flex flex-col lg:flex-row gap-4">
-                    <div className="flex-1">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Search Devices</label>
-                        <input
-                            type="text"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
-                            placeholder="Search by device name, ID, or user agent..."
-                        />
+                <div className="flex flex-col gap-4">
+                    <div className="flex flex-col lg:flex-row gap-4">
+                        <div className="flex-1">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Search Devices</label>
+                            <input
+                                type="text"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
+                                placeholder="Search by device name, ID, user agent, or Google user..."
+                            />
+                        </div>
+                        <div className="lg:w-64">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                <span className="flex items-center">
+                                    <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/>
+                                    </svg>
+                                    Filter by Google User
+                                </span>
+                            </label>
+                            <input
+                                type="text"
+                                value={googleUserFilter}
+                                onChange={(e) => setGoogleUserFilter(e.target.value)}
+                                className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
+                                placeholder="Filter by Google name or email..."
+                            />
+                        </div>
+                        <div className="lg:w-48">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+                            <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value as 'deviceName' | 'lastSeen' | 'firstVisit')}
+                                className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
+                            >
+                                <option value="lastSeen">Last Seen</option>
+                                <option value="deviceName">Device Name</option>
+                                <option value="firstVisit">First Visit</option>
+                            </select>
+                        </div>
+                        <div className="lg:w-32">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Order</label>
+                            <select
+                                value={sortOrder}
+                                onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
+                                className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
+                            >
+                                <option value="desc">Newest</option>
+                                <option value="asc">Oldest</option>
+                            </select>
+                        </div>
                     </div>
-                    <div className="lg:w-48">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
-                        <select
-                            value={sortBy}
-                            onChange={(e) => setSortBy(e.target.value as 'deviceName' | 'lastSeen' | 'firstVisit')}
-                            className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
-                        >
-                            <option value="lastSeen">Last Seen</option>
-                            <option value="deviceName">Device Name</option>
-                            <option value="firstVisit">First Visit</option>
-                        </select>
-                    </div>
-                    <div className="lg:w-32">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Order</label>
-                        <select
-                            value={sortOrder}
-                            onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
-                            className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
-                        >
-                            <option value="desc">Newest</option>
-                            <option value="asc">Oldest</option>
-                        </select>
-                    </div>
+                    {googleUserFilter && (
+                        <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">
+                            <span className="text-sm text-blue-700">
+                                Filtering by Google user: <span className="font-semibold">{googleUserFilter}</span>
+                            </span>
+                            <button
+                                onClick={() => setGoogleUserFilter('')}
+                                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                            >
+                                Clear filter
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -811,6 +862,9 @@ const DeviceManagement: React.FC = () => {
                                             Device Name
                                         </th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Google User
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Status
                                         </th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -883,13 +937,59 @@ const DeviceManagement: React.FC = () => {
                                                 )}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                                    device.isNamed 
-                                                        ? 'bg-green-100 text-green-800' 
-                                                        : 'bg-yellow-100 text-yellow-800'
-                                                }`}>
-                                                    {device.isNamed ? 'Named' : 'Unnamed'}
-                                                </span>
+                                                {device.googleUser ? (
+                                                    <div className="flex items-center space-x-3">
+                                                        {device.googleUser.picture ? (
+                                                            <img
+                                                                src={device.googleUser.picture}
+                                                                alt={device.googleUser.name || 'User'}
+                                                                className="w-8 h-8 rounded-full border-2 border-blue-200"
+                                                                onError={(e) => {
+                                                                    const target = e.target as HTMLImageElement;
+                                                                    target.style.display = 'none';
+                                                                    if (target.nextSibling) {
+                                                                        (target.nextSibling as HTMLElement).style.display = 'flex';
+                                                                    }
+                                                                }}
+                                                            />
+                                                        ) : null}
+                                                        <div className={`w-8 h-8 rounded-full bg-blue-100 items-center justify-center text-blue-600 font-semibold text-sm ${device.googleUser.picture ? 'hidden' : 'flex'}`}>
+                                                            {(device.googleUser.name || device.googleUser.email || '?')[0].toUpperCase()}
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="text-sm font-medium text-gray-900 truncate flex items-center">
+                                                                {device.googleUser.name || 'Google User'}
+                                                                <svg className="w-4 h-4 ml-1 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+                                                                    <path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/>
+                                                                </svg>
+                                                            </div>
+                                                            <div className="text-xs text-gray-500 truncate" title={device.googleUser.email || ''}>
+                                                                {device.googleUser.email || 'No email'}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-xs text-gray-400 italic">Not signed in</span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="flex flex-col space-y-1">
+                                                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                                        device.isNamed 
+                                                            ? 'bg-green-100 text-green-800' 
+                                                            : 'bg-yellow-100 text-yellow-800'
+                                                    }`}>
+                                                        {device.isNamed ? 'Named' : 'Unnamed'}
+                                                    </span>
+                                                    {device.googleUser && (
+                                                        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                                                            <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
+                                                                <path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/>
+                                                            </svg>
+                                                            Google
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex items-center space-x-3">

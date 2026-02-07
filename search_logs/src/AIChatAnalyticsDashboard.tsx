@@ -41,10 +41,11 @@ const AIChatAnalyticsDashboard: React.FC = () => {
                 const snapshot = await get(deviceRegistryRef);
                 if (snapshot.exists()) {
                     const deviceRegistry = snapshot.val();
+                    // Priority: Google user name > Device name > Device ID
                     const mappings: { [key: string]: string } = {};
                     Object.keys(deviceRegistry).forEach(deviceId => {
                         const device = deviceRegistry[deviceId];
-                        mappings[deviceId] = device.deviceName || deviceId;
+                        mappings[deviceId] = device.googleUser?.name || device.deviceName || deviceId;
                     });
                     setDeviceMappings(mappings);
                 }
