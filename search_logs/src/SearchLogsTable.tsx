@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useContext, useCallback, useMemo } from 'react';
-import { ref, get, remove, query, limitToLast } from 'firebase/database';
+import { ref, get, remove, query as rtdbQuery, limitToLast } from 'firebase/database';
 import { databaseLog } from './firebaseConfig';
 import { SearchLog } from './types';
 import { AuthContext } from './AuthProvider';
@@ -203,7 +203,7 @@ const SearchLogsTable: React.FC = () => {
                 const day = String(currentDate.getDate()).padStart(2, '0');
                 
                 // Bound reads per day node so a single huge day can't blow up the browser.
-                const dayRef = query(ref(databaseLog, `searchLogs/${year}/${month}/${day}`), limitToLast(PER_DAY_LIMIT));
+                const dayRef = rtdbQuery(ref(databaseLog, `searchLogs/${year}/${month}/${day}`), limitToLast(PER_DAY_LIMIT));
                 promises.push(
                     get(dayRef).then(snapshot => {
                         if (snapshot.exists()) {
