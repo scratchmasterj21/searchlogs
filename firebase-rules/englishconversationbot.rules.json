@@ -4,12 +4,12 @@
     ".write": false,
 
     "searchLogs": {
-      ".read": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)",
+      ".read": true,
       "$year": {
         "$month": {
           "$day": {
             "$logId": {
-              ".write": "!data.exists() || (auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/))",
+              ".write": true,
               ".validate": "newData.hasChildren(['query', 'deviceId', 'timestamp'])"
             }
           }
@@ -18,12 +18,12 @@
     },
 
     "aiChatLogs": {
-      ".read": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)",
+      ".read": true,
       "$year": {
         "$month": {
           "$day": {
             "$logId": {
-              ".write": "!data.exists() || (auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/))",
+              ".write": true,
               ".validate": "newData.hasChildren(['userMessage', 'deviceId', 'timestamp'])"
             }
           }
@@ -32,12 +32,12 @@
     },
 
     "flaggedSearches": {
-      ".read": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)",
+      ".read": true,
       "$year": {
         "$month": {
           "$day": {
             "$logId": {
-              ".write": "!data.exists() || (auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/))",
+              ".write": true,
               ".validate": "newData.hasChildren(['query', 'deviceId', 'reason', 'timestamp'])"
             }
           }
@@ -46,17 +46,15 @@
     },
 
     "deviceRegistry": {
-      ".read": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)",
+      ".read": true,
       "$deviceId": {
-        ".read": true,
         ".write": true
       }
     },
 
     "users": {
-      ".read": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)",
+      ".read": true,
       "$uid": {
-        ".read": true,
         ".write": true
       }
     }

@@ -16,22 +16,35 @@ Firebase console (Realtime Database -> Rules -> paste -> Publish) or via the Fir
 ## Design constraints (why the rules look the way they do)
 
 1. **Students are not authenticated.** The kid search app writes logs and registers devices
-   anonymously, so write access on those paths must stay open. We instead:
-   - lock all **reads** of PII-bearing collections to verified `@felice.ed.jp` accounts,
-   - allow anonymous **create** on individual log entries (`!data.exists()`),
-   - allow `@felice.ed.jp` staff to overwrite/delete (needed for dashboard log deletion),
-   - `.validate` the shape of new log entries.
-2. **The worker uses unauthenticated REST.** It reads `config/searchSettings/*` and
-   reads/writes `searchCache/*`, so those stay world-readable/writable.
-3. **`deviceRegistry` / `users`** allow read at the specific `$deviceId`/`$uid` child (the kid
-   app reads its own node by id) but block listing the whole collection unless you are a
-   verified `@felice.ed.jp` admin (prevents enumeration of all students' PII).
+   anonymously, so write access on those paths stays open, with `.validate` on the shape of
+   new log entries.
+2. **The dashboard authenticates against `gfa-typing`, not `englishconversationbot`.** Google
+   sign-in in the dashboard runs on the `gfa-typing` Firebase app (see `firebaseConfig.tsx`),
+   while the logs live in the `englishconversationbot` app, which the dashboard reads with **no
+   auth session** (RTDB auth is per-project and tokens are not portable across projects).
+   Therefore `englishconversationbot` read rules **cannot** require `auth != null` - doing so
+   returns `Permission denied` for the dashboard (and breaks bulk-delete). Reads there are left
+   open; the meaningful lockdown lives on the `gfa-typing` side, where the dashboard *is*
+   authenticated.
+3. **The worker uses unauthenticated REST.** It reads `config/searchSettings/*` and
+   reads/writes `searchCache/*` on `gfa-typing`, so those stay world-readable/writable.
+4. **`gfa-typing` is locked down:** `config/admins` and `workerActivityLogs` reads/writes and
+   `config/searchSettings` writes require a verified `@felice.ed.jp` account, which the
+   dashboard has.
 
-## Known limitation / follow-up
+## Known limitation / follow-up (important)
 
-Because anonymous writes are permitted, the log paths can still be **forged** by anyone who
-knows the database URL. To close this, add **Firebase App Check** (and/or Anonymous Auth) to
-the kid app and tighten `.write` to require `auth != null`. Tracked as a follow-up.
+To actually lock down **reads of student PII** in `englishconversationbot` (search/AI logs,
+`deviceRegistry`, `users`), the dashboard must hold a Firebase Auth session **on that project**.
+The recommended fix is one of:
+
+- Move the dashboard's logs reads behind a server (the worker), which reads via the Admin SDK /
+  REST with a privileged key, and have the dashboard call the worker instead of RTDB directly; or
+- Add a second Google sign-in / cross-project credential on the `englishconversationbot` app so
+  `auth.token.email` is available there, then re-introduce the verified-domain read rules; or
+- Add **Firebase App Check** to both apps to stop forged anonymous writes.
+
+Until one of those lands, `englishconversationbot` reads remain open by necessity.
 
 ## `config/admins`
 
