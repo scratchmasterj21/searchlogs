@@ -1,11 +1,9 @@
 // Worker API utility functions for controlling Cloudflare Worker KV status
 
-// TODO: Update this URL after deploying your Cloudflare Worker
-// The worker name in wrangler.jsonc is "backend", so the URL will be something like:
-// https://backend.YOUR-ACCOUNT-NAME.workers.dev
-// Or if you have a custom domain, use that instead
-const WORKER_BASE_URL = import.meta.env.VITE_WORKER_URL || 'https://backend.carlo587-jcl.workers.dev'
-;
+// Base URL of the deployed Cloudflare Worker. Override via VITE_WORKER_URL (.env);
+// the fallback below is the current production deployment and must match the URL the
+// kid-facing search app talks to.
+const WORKER_BASE_URL = import.meta.env.VITE_WORKER_URL || 'https://backend.carlo587-jcl.workers.dev';
 
 export interface WorkerStatusResponse {
   worker_status: 'on' | 'off';

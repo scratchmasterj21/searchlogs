@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
-import { Link } from 'react-router-dom';
 import { ref, push, onValue, off } from 'firebase/database';
 import { database } from './firebaseConfig';
 import { AuthContext } from './AuthProvider';
-import LogoutButton from './Logout';
+import NavBar from './components/NavBar';
 import {
   getWorkerStatus,
   updateWorkerStatus,
@@ -314,25 +313,9 @@ const WorkerControlPanel: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Navigation Bar */}
-      <nav className="bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 text-white p-4 shadow-lg">
-        <div className="container mx-auto flex justify-between items-center">
-          <div className="flex items-center space-x-6">
-            <h1 className="text-2xl font-bold">⚙️ Worker Control Panel</h1>
-            <div className="flex space-x-4">
-              <Link to="/" className="hover:underline">Search Logs</Link>
-              <Link to="/ai-chats" className="hover:underline">AI Chats</Link>
-              <Link to="/analytics" className="hover:underline">Analytics</Link>
-              <Link to="/ai-analytics" className="hover:underline">AI Analytics</Link>
-              <Link to="/devices" className="hover:underline">Devices</Link>
-              <Link to="/config" className="hover:underline">Config</Link>
-            </div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <span className="text-sm">{user?.email}</span>
-            <LogoutButton />
-          </div>
-        </div>
-      </nav>
+      <div className="container mx-auto px-6 pt-6">
+        <NavBar title="Worker Control Panel" />
+      </div>
 
       {/* Main Content */}
       <div className="container mx-auto p-6 max-w-7xl">

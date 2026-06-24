@@ -1,0 +1,64 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "searchLogs": {
+      ".read": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)",
+      "$year": {
+        "$month": {
+          "$day": {
+            "$logId": {
+              ".write": "!data.exists() || (auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/))",
+              ".validate": "newData.hasChildren(['query', 'deviceId', 'timestamp'])"
+            }
+          }
+        }
+      }
+    },
+
+    "aiChatLogs": {
+      ".read": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)",
+      "$year": {
+        "$month": {
+          "$day": {
+            "$logId": {
+              ".write": "!data.exists() || (auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/))",
+              ".validate": "newData.hasChildren(['userMessage', 'deviceId', 'timestamp'])"
+            }
+          }
+        }
+      }
+    },
+
+    "flaggedSearches": {
+      ".read": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)",
+      "$year": {
+        "$month": {
+          "$day": {
+            "$logId": {
+              ".write": "!data.exists() || (auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/))",
+              ".validate": "newData.hasChildren(['query', 'deviceId', 'reason', 'timestamp'])"
+            }
+          }
+        }
+      }
+    },
+
+    "deviceRegistry": {
+      ".read": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)",
+      "$deviceId": {
+        ".read": true,
+        ".write": true
+      }
+    },
+
+    "users": {
+      ".read": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)",
+      "$uid": {
+        ".read": true,
+        ".write": true
+      }
+    }
+  }
+}

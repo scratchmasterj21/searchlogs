@@ -18,6 +18,26 @@ export interface SearchLog {
     timestamp: number;
     userAgent: string;
     searchType: string;
+    // RTDB path this entry was read from (searchLogs/YYYY/MM/DD/<id>), used for deletion.
+    storagePath?: string;
+}
+
+// Flagged (blocked/filtered) search attempt, for safeguarding review.
+export type FlaggedReason = 'inappropriate' | 'filtered' | 'device_blocked';
+
+export interface FlaggedSearch {
+    id: string;
+    date: string;
+    deviceId: string;
+    query: string;
+    searchType: string;
+    reason: FlaggedReason;
+    timestamp: number;
+    userAgent: string;
+    googleId?: string;
+    googleEmail?: string;
+    googleName?: string;
+    storagePath?: string;
 }
 
 // AI Chat Log types
@@ -49,4 +69,5 @@ export interface AIChatLog {
     messageNumber?: number;
     hasConversationHistory?: boolean;
     wasRegenerated?: boolean;
+    wasRefused?: boolean;
 }

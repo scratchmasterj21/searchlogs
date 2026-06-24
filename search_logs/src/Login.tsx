@@ -1,19 +1,23 @@
 // LoginPage.js
 import { useContext, useEffect } from 'react';
-import { getAuth, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { getAuth, signInWithPopup, signOut, GoogleAuthProvider } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from './AuthProvider.tsx'; // Import the AuthContext from where you've defined it
 import {app} from './firebaseConfig.tsx'; // Import the initialized app
+import { ALLOWED_DOMAIN, isAllowedDomain } from './constants';
 
 const LoginPage = () => {
   const navigate = useNavigate();
   const { user, setUser} = useContext(AuthContext); // Use setUser from AuthContext to set the user after login
 
   useEffect(() => {
-    if (!user || !user.email || !user.email.endsWith('@felice.ed.jp')) {
-      return; // Exit if no user, no email, or email does not match domain
+    if (!user) return;
+    // Authenticated but outside the allowed domain: sign out so they can't linger
+    // in an authenticated state that ProtectedRoute might otherwise honor.
+    if (!isAllowedDomain(user.email)) {
+      signOut(getAuth(app));
+      return;
     }
-    
     navigate('/');
   }, [user, navigate]);
 
@@ -23,7 +27,7 @@ const LoginPage = () => {
 
     // Restrict access to a specific workspace domain using setCustomParameters
     provider.setCustomParameters({
-      hd: 'felice.ed.jp', // Replace with your workspace domain
+      hd: ALLOWED_DOMAIN, // Workspace domain
     });
 
     try {
@@ -38,11 +42,12 @@ const LoginPage = () => {
       const user = result.user;
 
       // Check if the domain is the expected one (your workspace)
-      if (user.email && user.email.endsWith('@felice.ed.jp')) {
+      if (isAllowedDomain(user.email)) {
         setUser(user); // Set the user in your context
         navigate('/'); // Redirect to the home page after login
         return; // Stop further execution
       } else {
+        await signOut(auth); // Don't leave a non-domain account authenticated
         throw new Error('Invalid domain');
       }
     }

@@ -1,10 +1,8 @@
-import React, { useEffect, useState, useContext, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { ref, get } from 'firebase/database';
 import { databaseLog } from './firebaseConfig';
 import { AIChatLog } from './types';
-import LogoutButton from './Logout.tsx';
-import { AuthContext } from './AuthProvider';
-import { Link } from 'react-router-dom';
+import NavBar from './components/NavBar';
 
 // Utility function for debouncing
 const useDebounce = (value: string, delay: number) => {
@@ -120,6 +118,7 @@ const AIChatLogsTable: React.FC = () => {
     const [minTokens, setMinTokens] = useState('');
     const [maxTokens, setMaxTokens] = useState('');
     const [timeRange, setTimeRange] = useState('');
+    const [refusedFilter, setRefusedFilter] = useState<'' | 'refused' | 'answered'>('');
     
     // Debounced search values
     const debouncedDeviceId = useDebounce(deviceId, 300);
@@ -132,7 +131,6 @@ const AIChatLogsTable: React.FC = () => {
     const [selectedLogs, setSelectedLogs] = useState<Set<string>>(new Set());
     const [selectAll, setSelectAll] = useState(false);
     
-    const { user } = useContext(AuthContext);
     const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ 
         key: 'date', 
         direction: 'desc' 
@@ -256,6 +254,12 @@ const AIChatLogsTable: React.FC = () => {
             );
         }
 
+        if (refusedFilter === 'refused') {
+            filtered = filtered.filter(log => log.wasRefused === true);
+        } else if (refusedFilter === 'answered') {
+            filtered = filtered.filter(log => !log.wasRefused);
+        }
+
         if (aiModel) {
             filtered = filtered.filter(log => log.aiModel === aiModel);
         }
@@ -318,7 +322,7 @@ const AIChatLogsTable: React.FC = () => {
         }
 
         return filtered;
-    }, [logs, debouncedDeviceId, debouncedUserMessage, aiModel, minConfidence, maxConfidence, minProcessingTime, maxProcessingTime, minTokens, maxTokens, timeRange, deviceMappings]);
+    }, [logs, debouncedDeviceId, debouncedUserMessage, aiModel, minConfidence, maxConfidence, minProcessingTime, maxProcessingTime, minTokens, maxTokens, timeRange, refusedFilter, deviceMappings]);
 
     // Sorting with memoization
     const sortedLogs = useMemo(() => {
@@ -484,78 +488,7 @@ const AIChatLogsTable: React.FC = () => {
 
     return (
         <div className="container mx-auto px-6 py-8">
-            {/* Navbar */}
-            <nav className="bg-gradient-to-r from-purple-600 to-purple-700 shadow-xl rounded-xl mb-8 overflow-hidden">
-                <div className="px-6 py-4">
-                    <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
-                        <div className="flex items-center">
-                            {user && (
-                                <div className="flex items-center space-x-3">
-                                    <div className="w-10 h-10 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                        </svg>
-                                    </div>
-                                    <div>
-                                        <p className="text-white font-semibold text-sm">
-                                            {user.displayName || 'User'}
-                                        </p>
-                                        <p className="text-purple-100 text-xs">
-                                            {user.email}
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        
-                        <div className="flex items-center">
-                            <div className="text-center">
-                                <h1 className="text-2xl sm:text-3xl lg:text-4xl text-white font-extrabold">
-                                    AI Chat Logs
-                                </h1>
-                                <p className="text-purple-100 text-sm mt-1">
-                                    AI Conversation Analytics
-                                </p>
-                            </div>
-                        </div>
-                        
-                        <div className="flex items-center space-x-3">
-                            <Link 
-                                to="/" 
-                                className="px-4 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-colors duration-200"
-                            >
-                                Search Logs
-                            </Link>
-                            <Link 
-                                to="/ai-analytics" 
-                                className="px-4 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-colors duration-200 flex items-center space-x-2"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                </svg>
-                                <span>AI Analytics</span>
-                            </Link>
-                            <Link 
-                                to="/devices" 
-                                className="px-4 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-colors duration-200"
-                            >
-                                Devices
-                            </Link>
-                            <Link 
-                                to="/worker-control" 
-                                className="px-4 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-colors duration-200 flex items-center space-x-2"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                                <span>Worker Control</span>
-                            </Link>
-                            <LogoutButton />
-                        </div>
-                    </div>
-                </div>
-            </nav>
+            <NavBar title="AI Chat Logs" />
 
             {/* Filters */}
             <div className="mb-6 bg-white rounded-xl shadow-lg p-6 border border-gray-100">
@@ -573,7 +506,7 @@ const AIChatLogsTable: React.FC = () => {
                             type="date"
                             value={fromDate}
                             onChange={(e) => setFromDate(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-colors"
                         />
                     </div>
@@ -583,7 +516,7 @@ const AIChatLogsTable: React.FC = () => {
                             type="date"
                             value={toDate}
                             onChange={(e) => setToDate(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-colors"
                         />
                     </div>
@@ -598,7 +531,7 @@ const AIChatLogsTable: React.FC = () => {
                             type="text"
                             value={deviceId}
                             onChange={(e) => setDeviceId(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-colors"
                             placeholder="Search device, name, or Google user..."
                         />
@@ -609,7 +542,7 @@ const AIChatLogsTable: React.FC = () => {
                             type="text"
                             value={userMessage}
                             onChange={(e) => setUserMessage(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-colors"
                             placeholder="Search message..."
                         />
@@ -619,13 +552,25 @@ const AIChatLogsTable: React.FC = () => {
                         <select
                             value={aiModel}
                             onChange={(e) => setAiModel(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-colors"
                         >
                             <option value="">All Models</option>
                             {uniqueAiModels.map(model => (
                                 <option key={model} value={model}>{model}</option>
                             ))}
+                        </select>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="block text-sm font-medium text-gray-700">Moderation</label>
+                        <select
+                            value={refusedFilter}
+                            onChange={(e) => setRefusedFilter(e.target.value as '' | 'refused' | 'answered')}
+                            className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-colors"
+                        >
+                            <option value="">All Responses</option>
+                            <option value="refused">Refused only</option>
+                            <option value="answered">Answered only</option>
                         </select>
                     </div>
                 </div>
@@ -641,7 +586,7 @@ const AIChatLogsTable: React.FC = () => {
                             max="1"
                             value={minConfidence}
                             onChange={(e) => setMinConfidence(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-colors"
                             placeholder="0.0-1.0"
                         />
@@ -655,7 +600,7 @@ const AIChatLogsTable: React.FC = () => {
                             max="1"
                             value={maxConfidence}
                             onChange={(e) => setMaxConfidence(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-colors"
                             placeholder="0.0-1.0"
                         />
@@ -666,7 +611,7 @@ const AIChatLogsTable: React.FC = () => {
                             type="number"
                             value={minProcessingTime}
                             onChange={(e) => setMinProcessingTime(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-colors"
                             placeholder="Min ms"
                         />
@@ -677,7 +622,7 @@ const AIChatLogsTable: React.FC = () => {
                             type="number"
                             value={maxProcessingTime}
                             onChange={(e) => setMaxProcessingTime(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-colors"
                             placeholder="Max ms"
                         />
@@ -688,7 +633,7 @@ const AIChatLogsTable: React.FC = () => {
                             type="number"
                             value={minTokens}
                             onChange={(e) => setMinTokens(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-colors"
                             placeholder="Min tokens"
                         />
@@ -699,7 +644,7 @@ const AIChatLogsTable: React.FC = () => {
                             type="number"
                             value={maxTokens}
                             onChange={(e) => setMaxTokens(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-colors"
                             placeholder="Max tokens"
                         />
@@ -709,7 +654,7 @@ const AIChatLogsTable: React.FC = () => {
                         <select
                             value={timeRange}
                             onChange={(e) => setTimeRange(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-colors"
                         >
                             <option value="">All Time</option>
@@ -871,6 +816,11 @@ const AIChatLogsTable: React.FC = () => {
                                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getConfidenceColor(log.confidence)}`}>
                                                 {getConfidenceBadge(log.confidence)} ({log.confidence.toFixed(2)})
                                             </span>
+                                            {log.wasRefused && (
+                                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200">
+                                                    Refused
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="flex items-center justify-between text-sm">

@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useContext, useCallback, useMemo } from 'react';
-import { ref, get } from 'firebase/database';
+import { ref, get, remove, query, limitToLast } from 'firebase/database';
 import { databaseLog } from './firebaseConfig';
 import { SearchLog } from './types';
-import LogoutButton from './Logout.tsx';
 import { AuthContext } from './AuthProvider';
+import { useAdmins } from './hooks/useAdmins';
+import NavBar from './components/NavBar';
+import LoadingSkeleton from './components/LoadingSkeleton';
 import { Link } from 'react-router-dom';
 
 // Utility function for debouncing
@@ -49,7 +51,7 @@ const exportToCSV = (data: SearchLog[], deviceMappings: { [key: string]: string 
     document.body.removeChild(link);
 };
 
-type SortKey = keyof Pick<SearchLog, 'date' | 'deviceId' | 'query'>;
+type SortKey = 'date' | 'deviceId' | 'query' | 'results';
 
 // Utility functions
 const toJST = (date: Date): Date => {
@@ -86,12 +88,18 @@ interface DeviceData {
     };
 }
 
+// Scale guards: bound how much we pull into the browser for large ranges.
+const MAX_RANGE_DAYS = 92;       // clamp the fetched window to the most recent ~3 months
+const PER_DAY_LIMIT = 1000;      // cap reads per day node
+const MAX_TOTAL_RESULTS = 5000;  // cap total rows held client-side
+
 const SearchLogsTable: React.FC = () => {
     const [logs, setLogs] = useState<SearchLog[]>([]);
     const [deviceMappings, setDeviceMappings] = useState<{ [key: string]: string }>({});
     const [deviceData, setDeviceData] = useState<{ [key: string]: DeviceData }>({});
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [rangeNotice, setRangeNotice] = useState<string | null>(null);
     
     // Filter states
     const [fromDate, setFromDate] = useState(() => formatDateForInput(toJST(new Date())));
@@ -102,8 +110,6 @@ const SearchLogsTable: React.FC = () => {
     const [minResults, setMinResults] = useState('');
     const [maxResults, setMaxResults] = useState('');
     const [timeRange, setTimeRange] = useState('');
-    const [sortBy, setSortBy] = useState('date');
-    const [sortOrder, setSortOrder] = useState('desc');
     
     // Debounced search values
     const debouncedDeviceId = useDebounce(deviceId, 300);
@@ -118,6 +124,8 @@ const SearchLogsTable: React.FC = () => {
     const [selectAll, setSelectAll] = useState(false);
     
     const { user } = useContext(AuthContext);
+    const { isAdmin } = useAdmins();
+    const [isDeleting, setIsDeleting] = useState(false);
     const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ 
         key: 'date', 
         direction: 'desc' 
@@ -163,12 +171,25 @@ const SearchLogsTable: React.FC = () => {
     const fetchLogs = useCallback(async (fromDateStr: string, toDateStr: string) => {
         setLoading(true);
         setError(null);
+        setRangeNotice(null);
         
         try {
             const fromDateTime = toJST(new Date(fromDateStr));
             const toDateTime = toJST(new Date(toDateStr));
             fromDateTime.setHours(0, 0, 0, 0);
             toDateTime.setHours(23, 59, 59, 999);
+
+            // Clamp very large ranges to the most recent MAX_RANGE_DAYS to avoid pulling
+            // an unbounded amount of data into the browser.
+            const notices: string[] = [];
+            const spanDays = Math.floor((toDateTime.getTime() - fromDateTime.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+            if (spanDays > MAX_RANGE_DAYS) {
+                const clamped = new Date(toDateTime);
+                clamped.setDate(clamped.getDate() - (MAX_RANGE_DAYS - 1));
+                clamped.setHours(0, 0, 0, 0);
+                fromDateTime.setTime(clamped.getTime());
+                notices.push(`Showing only the most recent ${MAX_RANGE_DAYS} days of your ${spanDays}-day range. Narrow the range to see older logs.`);
+            }
 
             const formattedData: SearchLog[] = [];
             
@@ -181,7 +202,8 @@ const SearchLogsTable: React.FC = () => {
                 const month = String(currentDate.getMonth() + 1).padStart(2, '0');
                 const day = String(currentDate.getDate()).padStart(2, '0');
                 
-                const dayRef = ref(databaseLog, `searchLogs/${year}/${month}/${day}`);
+                // Bound reads per day node so a single huge day can't blow up the browser.
+                const dayRef = query(ref(databaseLog, `searchLogs/${year}/${month}/${day}`), limitToLast(PER_DAY_LIMIT));
                 promises.push(
                     get(dayRef).then(snapshot => {
                         if (snapshot.exists()) {
@@ -192,7 +214,8 @@ const SearchLogsTable: React.FC = () => {
                                 formattedData.push({
                                     id: logId,
                                     date: dateTime.toISOString(),
-                                    ...logEntry
+                                    ...logEntry,
+                                    storagePath: `searchLogs/${year}/${month}/${day}/${logId}`
                                 });
                             });
                         }
@@ -208,7 +231,16 @@ const SearchLogsTable: React.FC = () => {
             
             // Sort by latest date and time
             formattedData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-            setLogs(formattedData);
+
+            // Cap total rows held in memory; keep the most recent.
+            let finalData = formattedData;
+            if (formattedData.length > MAX_TOTAL_RESULTS) {
+                finalData = formattedData.slice(0, MAX_TOTAL_RESULTS);
+                notices.push(`Loaded the ${MAX_TOTAL_RESULTS.toLocaleString()} most recent logs out of ${formattedData.length.toLocaleString()}. Narrow your range or filters to see the rest.`);
+            }
+
+            setLogs(finalData);
+            setRangeNotice(notices.length > 0 ? notices.join(' ') : null);
             
         } catch (err) {
             setError('Failed to fetch logs. Please try again.');
@@ -296,6 +328,10 @@ const SearchLogsTable: React.FC = () => {
                 const dateA = new Date(a.date).getTime();
                 const dateB = new Date(b.date).getTime();
                 return direction === 'asc' ? dateA - dateB : dateB - dateA;
+            } else if (key === 'results') {
+                const countA = a.results?.length || 0;
+                const countB = b.results?.length || 0;
+                return direction === 'asc' ? countA - countB : countB - countA;
             } else {
                 const comparison = String(a[key]).localeCompare(String(b[key]));
                 return direction === 'asc' ? comparison : -comparison;
@@ -357,22 +393,46 @@ const SearchLogsTable: React.FC = () => {
         exportToCSV(selectedLogsData, deviceMappings);
     }, [selectedLogs, paginatedLogs, deviceMappings]);
 
-    const handleBulkDelete = useCallback(() => {
+    const handleBulkDelete = useCallback(async () => {
         if (selectedLogs.size === 0) return;
-        
+
+        if (!isAdmin(user?.email)) {
+            alert('You do not have permission to delete search logs.');
+            return;
+        }
+
         const confirmed = window.confirm(
             `Are you sure you want to delete ${selectedLogs.size} selected search logs? This action cannot be undone.`
         );
-        
-        if (confirmed) {
-            // Note: In a real implementation, you would call a delete API here
-            console.log('Bulk delete logs:', Array.from(selectedLogs));
+        if (!confirmed) return;
+
+        // Resolve the RTDB path for each selected log and delete it.
+        const targets = logs.filter(log => selectedLogs.has(log.id));
+        const missingPath = targets.filter(log => !log.storagePath);
+
+        setIsDeleting(true);
+        setError(null);
+        try {
+            await Promise.all(
+                targets
+                    .filter(log => log.storagePath)
+                    .map(log => remove(ref(databaseLog, log.storagePath as string)))
+            );
+
+            if (missingPath.length > 0) {
+                setError(`Deleted ${targets.length - missingPath.length} logs; ${missingPath.length} could not be located and were skipped.`);
+            }
+
             setSelectedLogs(new Set());
             setSelectAll(false);
-            // Refresh the data
-            fetchLogs(fromDate, toDate);
+            await fetchLogs(fromDate, toDate);
+        } catch (err) {
+            console.error('Bulk delete failed:', err);
+            setError('Failed to delete the selected logs. You may not have permission, or the network failed.');
+        } finally {
+            setIsDeleting(false);
         }
-    }, [selectedLogs, fromDate, toDate, fetchLogs]);
+    }, [selectedLogs, logs, isAdmin, user, fromDate, toDate, fetchLogs]);
 
     // Load initial data
     useEffect(() => {
@@ -460,87 +520,7 @@ const SearchLogsTable: React.FC = () => {
 
     return (
         <div className="container mx-auto px-6 py-8">
-            {/* Navbar */}
-            <nav className="bg-gradient-to-r from-blue-600 to-blue-700 shadow-xl rounded-xl mb-8 overflow-hidden">
-                <div className="px-6 py-4">
-                    <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
-                        {/* User info */}
-                        <div className="flex items-center">
-                            {user && (
-                                <div className="flex items-center space-x-3">
-                                    <div className="w-10 h-10 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                        </svg>
-                                    </div>
-                                    <div>
-                                        <p className="text-white font-semibold text-sm">
-                                            {user.displayName || 'User'}
-                                        </p>
-                                        <p className="text-blue-100 text-xs">
-                                            {user.email}
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        
-                        {/* Title */}
-                        <div className="flex items-center">
-                            <div className="text-center">
-                                <h1 className="text-2xl sm:text-3xl lg:text-4xl text-white font-extrabold">
-                                    Search Logs
-                                </h1>
-                                <p className="text-blue-100 text-sm mt-1">
-                                    Student Search Analytics
-                                </p>
-                            </div>
-                        </div>
-                        
-                        {/* Navigation */}
-                        <div className="flex items-center space-x-3">
-                            <Link 
-                                to="/analytics" 
-                                className="px-4 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-colors duration-200 flex items-center space-x-2"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                </svg>
-                                <span>Analytics</span>
-                            </Link>
-                            <Link 
-                                to="/ai-chats" 
-                                className="px-4 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-colors duration-200 flex items-center space-x-2"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                                </svg>
-                                <span>AI Chats</span>
-                            </Link>
-                            <Link 
-                                to="/devices" 
-                                className="px-4 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-colors duration-200 flex items-center space-x-2"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                </svg>
-                                <span>Devices</span>
-                            </Link>
-                            <Link 
-                                to="/worker-control" 
-                                className="px-4 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-colors duration-200 flex items-center space-x-2"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                                <span>Worker Control</span>
-                            </Link>
-                            <LogoutButton />
-                        </div>
-                    </div>
-                </div>
-            </nav>
+            <NavBar title="Search Logs" />
 
             {/* Filters */}
             <div className="mb-6 bg-white rounded-xl shadow-lg p-6 border border-gray-100">
@@ -558,7 +538,7 @@ const SearchLogsTable: React.FC = () => {
                             type="date"
                             value={fromDate}
                             onChange={(e) => setFromDate(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
                         />
                     </div>
@@ -568,7 +548,7 @@ const SearchLogsTable: React.FC = () => {
                             type="date"
                             value={toDate}
                             onChange={(e) => setToDate(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
                         />
                     </div>
@@ -583,7 +563,7 @@ const SearchLogsTable: React.FC = () => {
                             type="text"
                             value={deviceId}
                             onChange={(e) => setDeviceId(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
                             placeholder="Search device, name, or Google user..."
                         />
@@ -594,7 +574,7 @@ const SearchLogsTable: React.FC = () => {
                             type="text"
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
                             placeholder="Search query..."
                         />
@@ -604,7 +584,7 @@ const SearchLogsTable: React.FC = () => {
                         <select
                             value={searchType}
                             onChange={(e) => setSearchType(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
                         >
                             <option value="">All Types</option>
@@ -617,7 +597,7 @@ const SearchLogsTable: React.FC = () => {
                         <select
                             value={timeRange}
                             onChange={(e) => setTimeRange(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
                         >
                             <option value="">All Time</option>
@@ -637,7 +617,7 @@ const SearchLogsTable: React.FC = () => {
                             type="number"
                             value={minResults}
                             onChange={(e) => setMinResults(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
                             placeholder="Minimum results"
                             min="0"
@@ -649,7 +629,7 @@ const SearchLogsTable: React.FC = () => {
                             type="number"
                             value={maxResults}
                             onChange={(e) => setMaxResults(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={handleKeyPress}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
                             placeholder="Maximum results"
                             min="0"
@@ -658,8 +638,8 @@ const SearchLogsTable: React.FC = () => {
                     <div className="space-y-1">
                         <label className="block text-sm font-medium text-gray-700">Sort By</label>
                         <select
-                            value={sortBy}
-                            onChange={(e) => setSortBy(e.target.value)}
+                            value={sortConfig.key}
+                            onChange={(e) => setSortConfig(prev => ({ ...prev, key: e.target.value as SortKey }))}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
                         >
                             <option value="date">Date</option>
@@ -671,8 +651,8 @@ const SearchLogsTable: React.FC = () => {
                     <div className="space-y-1">
                         <label className="block text-sm font-medium text-gray-700">Sort Order</label>
                         <select
-                            value={sortOrder}
-                            onChange={(e) => setSortOrder(e.target.value)}
+                            value={sortConfig.direction}
+                            onChange={(e) => setSortConfig(prev => ({ ...prev, direction: e.target.value as 'asc' | 'desc' }))}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
                         >
                             <option value="desc">Newest First</option>
@@ -722,12 +702,20 @@ const SearchLogsTable: React.FC = () => {
                 </div>
             )}
 
+            {rangeNotice && !loading && (
+                <div className="mb-4 p-4 bg-amber-50 border border-amber-300 text-amber-800 rounded flex items-start gap-2">
+                    <svg className="w-5 h-5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>{rangeNotice}</span>
+                </div>
+            )}
+
             {/* Loading Indicator */}
             {loading && (
-                <div className="text-center py-12">
-                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600"></div>
-                    <p className="mt-4 text-gray-600 text-lg">Loading search logs...</p>
-                    <p className="mt-2 text-gray-500 text-sm">Please wait while we fetch your data</p>
+                <div className="py-4">
+                    <p className="mb-4 text-gray-500 text-sm text-center">Loading search logs...</p>
+                    <LoadingSkeleton rows={6} />
                 </div>
             )}
 
@@ -760,15 +748,18 @@ const SearchLogsTable: React.FC = () => {
                                         </svg>
                                         <span>Export Selected</span>
                                     </button>
+                                    {isAdmin(user?.email) && (
                                     <button
                                         onClick={handleBulkDelete}
-                                        className="px-3 py-1 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors duration-200 flex items-center space-x-1"
+                                        disabled={isDeleting}
+                                        className="px-3 py-1 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 disabled:bg-gray-400 transition-colors duration-200 flex items-center space-x-1"
                                     >
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                         </svg>
-                                        <span>Delete Selected</span>
+                                        <span>{isDeleting ? 'Deleting...' : 'Delete Selected'}</span>
                                     </button>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -875,7 +866,9 @@ const SearchLogsTable: React.FC = () => {
                                         <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
                                         </svg>
-                                        {deviceMappings[log.deviceId] || log.deviceId}
+                                        <Link to={`/student/${encodeURIComponent(log.deviceId)}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                                            {deviceMappings[log.deviceId] || log.deviceId}
+                                        </Link>
                                     </div>
                                 </div>
 

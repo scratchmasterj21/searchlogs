@@ -1,0 +1,27 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "config": {
+      "searchSettings": {
+        ".read": true,
+        ".write": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)"
+      },
+      "admins": {
+        ".read": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)",
+        ".write": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)"
+      }
+    },
+
+    "searchCache": {
+      ".read": true,
+      ".write": true
+    },
+
+    "workerActivityLogs": {
+      ".read": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)",
+      ".write": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/.*@felice[.]ed[.]jp$/)"
+    }
+  }
+}
